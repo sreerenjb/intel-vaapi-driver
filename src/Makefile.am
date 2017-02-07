@@ -105,6 +105,7 @@ source_c = \
         i965_encoder_const_def.c    \
         gen9_avc_const_def.c    \
         gen9_avc_encoder_kernels.c     \
+        i965_avc_encoder_common.c \
 	$(NULL)
 
 source_h = \
@@ -163,6 +164,7 @@ source_h = \
         i965_encoder_api.h        \
         gen9_avc_const_def.h      \
         gen9_avc_encoder_kernels.h      \
+        i965_avc_encoder_common.h       \
 	$(NULL)
 
 # convenience library that can be linked by driver and tests
