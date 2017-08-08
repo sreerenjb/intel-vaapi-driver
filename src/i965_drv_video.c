@@ -538,7 +538,8 @@ i965_QueryConfigProfiles(VADriverContextP ctx,
     if (HAS_H264_DECODING(i965) ||
         HAS_H264_ENCODING(i965) ||
         HAS_LP_H264_ENCODING(i965) ||
-        HAS_FEI_H264_ENCODING(i965)) {
+        HAS_FEI_H264_ENCODING(i965) ||
+        HAS_H264_PREENC(i965)) {
         profile_list[i++] = VAProfileH264ConstrainedBaseline;
         profile_list[i++] = VAProfileH264Main;
         profile_list[i++] = VAProfileH264High;
@@ -649,6 +650,9 @@ i965_QueryConfigEntrypoints(VADriverContextP ctx,
 
         if (HAS_FEI_H264_ENCODING(i965))
             entrypoint_list[n++] = VAEntrypointFEI;
+
+        if (HAS_H264_PREENC(i965))
+            entrypoint_list[n++] = VAEntrypointStats;
 
         break;
     case VAProfileH264MultiviewHigh:
@@ -767,10 +771,12 @@ i965_validate_config(VADriverContextP ctx, VAProfile profile,
         if ((HAS_H264_DECODING(i965) && entrypoint == VAEntrypointVLD) ||
             (HAS_H264_ENCODING(i965) && entrypoint == VAEntrypointEncSlice) ||
             (HAS_LP_H264_ENCODING(i965) && entrypoint == VAEntrypointEncSliceLP) ||
-            (HAS_FEI_H264_ENCODING(i965) && entrypoint == VAEntrypointFEI)) {
+            (HAS_FEI_H264_ENCODING(i965) && entrypoint == VAEntrypointFEI) ||
+            (HAS_H264_PREENC(i965) && entrypoint == VAEntrypointStats)) {
             va_status = VA_STATUS_SUCCESS;
         } else if (!HAS_H264_DECODING(i965) && !HAS_H264_ENCODING(i965) &&
-                   !HAS_LP_H264_ENCODING(i965) && !HAS_FEI_H264_ENCODING(i965)) {
+                   !HAS_LP_H264_ENCODING(i965) && !HAS_FEI_H264_ENCODING(i965) &&
+                   !HAS_H264_PREENC(i965)) {
             va_status = VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
         } else {
             va_status = VA_STATUS_ERROR_UNSUPPORTED_ENTRYPOINT;
@@ -960,7 +966,7 @@ i965_GetConfigAttributes(VADriverContextP ctx,
     if (va_status != VA_STATUS_SUCCESS)
         return va_status;
 
-    /* Other attributes don't seem to be defined */
+    /* Oher attributes don't seem to be defined */
     /* What to do if we don't know the attribute? */
     for (i = 0; i < num_attribs; i++) {
         attrib_list[i].value = VA_ATTRIB_NOT_SUPPORTED;
@@ -1200,6 +1206,15 @@ i965_GetConfigAttributes(VADriverContextP ctx,
 
         case VAConfigAttribFEIMVPredictors:
             attrib_list[i].value = 4;
+            break;
+        case VAConfigAttribStats:
+            if (entrypoint == VAEntrypointStats) {
+                VAConfigAttribValStats *configVal = (VAConfigAttribValStats*) & (attrib_list[i].value);
+                (configVal->bits).max_num_past_references = STATS_MAX_NUM_PAST_REFS;
+                (configVal->bits).max_num_future_references = STATS_MAX_NUM_FUTURE_REFS;
+                (configVal->bits).num_outputs = STATS_MAX_NUM_OUTPUTS;
+                (configVal->bits).interlaced = STATS_INTERLACED_SUPPORT;
+            }
             break;
 
         default:
@@ -2353,6 +2368,11 @@ i965_destroy_context(struct object_heap *heap, struct object_base *obj)
         free(obj_context->codec_state.encode.packed_header_data_ext);
 
         i965_release_buffer_store(&obj_context->codec_state.encode.encmb_map);
+
+    } else if (obj_context->codec_type == CODEC_PREENC) {
+        /*FeiPreEncFix */
+        i965_release_buffer_store(&obj_context->codec_state.encode.stat_param_ext);
+
     } else {
         assert(obj_context->codec_state.decode.num_slice_params <= obj_context->codec_state.decode.max_slice_params);
         assert(obj_context->codec_state.decode.num_slice_datas <= obj_context->codec_state.decode.max_slice_datas);
@@ -2515,6 +2535,13 @@ i965_CreateContext(VADriverContextP ctx,
             }
             assert(i965->codec_info->enc_hw_context_init);
             obj_context->hw_context = i965->codec_info->enc_hw_context_init(ctx, obj_config);
+        } else if (VAEntrypointStats == obj_config->entrypoint) {
+            /* PreEnc sharing the ENC structures */
+            obj_context->codec_type = CODEC_PREENC;
+            memset(&obj_context->codec_state.encode, 0, sizeof(obj_context->codec_state.encode));
+            obj_context->codec_state.encode.current_render_target = VA_INVALID_ID;
+            assert(i965->codec_info->enc_hw_context_init);
+            obj_context->hw_context = i965->codec_info->enc_hw_context_init(ctx, obj_config);
         } else {
             obj_context->codec_type = CODEC_DEC;
             memset(&obj_context->codec_state.decode, 0, sizeof(obj_context->codec_state.decode));
@@ -2649,12 +2676,17 @@ i965_create_buffer_internal(VADriverContextP ctx,
     case VAHuffmanTableBufferType:
     case VAProbabilityBufferType:
     case VAEncMacroblockMapBufferType:
-    case VAEncQpBufferType:
+    case VAEncQPBufferType:
     case VAEncFEIMVBufferType:
     case VAEncFEIMBCodeBufferType:
     case VAEncFEIDistortionBufferType:
     case VAEncFEIMBControlBufferType:
     case VAEncFEIMVPredictorBufferType:
+    case VAStatsStatisticsParameterBufferType:
+    case VAStatsStatisticsBufferType:
+    case VAStatsStatisticsBottomFieldBufferType:
+    case VAStatsMVBufferType:
+    case VAStatsMVPredictorBufferType:
         /* Ok */
         break;
 
@@ -2717,12 +2749,16 @@ i965_create_buffer_internal(VADriverContextP ctx,
                type == VAEncCodedBufferType ||
                type == VAEncMacroblockMapBufferType ||
                type == VAProbabilityBufferType ||
-               type == VAEncQpBufferType ||
+               type == VAEncQPBufferType ||
                type == VAEncFEIMVBufferType ||
                type == VAEncFEIMBCodeBufferType ||
                type == VAEncFEIDistortionBufferType ||
                type == VAEncFEIMBControlBufferType ||
-               type == VAEncFEIMVPredictorBufferType) {
+               type == VAEncFEIMVPredictorBufferType ||
+               type == VAStatsStatisticsBufferType ||
+               type == VAStatsStatisticsBottomFieldBufferType ||
+               type == VAStatsMVBufferType ||
+               type == VAStatsMVPredictorBufferType) {
 
         /* If the buffer is wrapped, the bo/buffer of buffer_store is bogus.
          * So it is enough to allocate one 64 byte bo
@@ -3064,7 +3100,7 @@ i965_BeginPicture(VADriverContextP ctx,
         return VA_STATUS_ERROR_SURFACE_BUSY;
 
     if (obj_context->codec_type == CODEC_PROC) {
-        obj_context->codec_state.proc.current_render_target = render_target;
+        obj_context->codec_state.encode.current_render_target = render_target;
     } else if (obj_context->codec_type == CODEC_ENC) {
         /* ext */
         i965_release_buffer_store(&obj_context->codec_state.encode.pic_param_ext);
@@ -3102,6 +3138,9 @@ i965_BeginPicture(VADriverContextP ctx,
                 i965_release_buffer_store(&obj_context->codec_state.encode.misc_param[i][j]);
 
         i965_release_buffer_store(&obj_context->codec_state.encode.encmb_map);
+    } else if (obj_context->codec_type == CODEC_PREENC) {
+        i965_release_buffer_store(&obj_context->codec_state.encode.stat_param_ext);
+        obj_context->codec_state.encode.current_render_target = render_target;
     } else {
         obj_context->codec_state.decode.current_render_target = render_target;
         i965_release_buffer_store(&obj_context->codec_state.decode.pic_param);
@@ -3368,6 +3407,7 @@ DEF_RENDER_ENCODE_SINGLE_BUFFER_FUNC(huffman_table, huffman_table)
 DEF_RENDER_ENCODE_SINGLE_BUFFER_FUNC(sequence_parameter_ext, seq_param_ext)
 DEF_RENDER_ENCODE_SINGLE_BUFFER_FUNC(picture_parameter_ext, pic_param_ext)
 DEF_RENDER_ENCODE_SINGLE_BUFFER_FUNC(encmb_map, encmb_map)
+DEF_RENDER_ENCODE_SINGLE_BUFFER_FUNC(statistics_parameter_ext, stat_param_ext)
 
 #define DEF_RENDER_ENCODE_MULTI_BUFFER_FUNC(name, member) DEF_RENDER_MULTI_BUFFER_FUNC(encode, name, member)
 // DEF_RENDER_ENCODE_MULTI_BUFFER_FUNC(slice_parameter, slice_params)
@@ -3688,6 +3728,42 @@ i965_encoder_render_picture(VADriverContextP ctx,
     return vaStatus;
 }
 
+static VAStatus
+i965_pre_encoder_render_picture(VADriverContextP ctx,
+                                VAContextID context,
+                                VABufferID *buffers,
+                                int num_buffers)
+{
+    struct i965_driver_data *i965 = i965_driver_data(ctx);
+    struct object_context *obj_context = CONTEXT(context);
+    struct object_config *obj_config;
+    VAStatus vaStatus = VA_STATUS_ERROR_UNKNOWN;
+    int i;
+
+    ASSERT_RET(obj_context, VA_STATUS_ERROR_INVALID_CONTEXT);
+    obj_config = obj_context->obj_config;
+    ASSERT_RET(obj_config, VA_STATUS_ERROR_INVALID_CONFIG);
+
+    for (i = 0; i < num_buffers; i++) {
+        struct object_buffer *obj_buffer = BUFFER(buffers[i]);
+
+        if (!obj_buffer)
+            return VA_STATUS_ERROR_INVALID_BUFFER;
+
+        switch (obj_buffer->type) {
+        case VAStatsStatisticsParameterBufferType:
+            vaStatus = I965_RENDER_ENCODE_BUFFER(statistics_parameter_ext);
+            break;
+
+        default:
+            vaStatus = VA_STATUS_ERROR_UNSUPPORTED_BUFFERTYPE;
+            break;
+        }
+    }
+
+    return vaStatus;
+}
+
 #define I965_RENDER_PROC_BUFFER(name) I965_RENDER_BUFFER(proc, name)
 
 #define DEF_RENDER_PROC_SINGLE_BUFFER_FUNC(name, member) DEF_RENDER_SINGLE_BUFFER_FUNC(proc, name, member)
@@ -3753,6 +3829,8 @@ i965_RenderPicture(VADriverContextP ctx,
                (VAEntrypointEncSliceLP == obj_config->entrypoint) ||
                (VAEntrypointFEI == obj_config->entrypoint)) {
         vaStatus = i965_encoder_render_picture(ctx, context, buffers, num_buffers);
+    } else if (VAEntrypointStats == obj_config->entrypoint) {
+        vaStatus = i965_pre_encoder_render_picture(ctx, context, buffers, num_buffers);
     } else {
         vaStatus = i965_decoder_render_picture(ctx, context, buffers, num_buffers);
     }
@@ -3807,6 +3885,8 @@ i965_EndPicture(VADriverContextP ctx, VAContextID context)
                       " under packed SLICE_HEADER mode\n");
             return VA_STATUS_ERROR_INVALID_PARAMETER;
         }
+    } else if (obj_context->codec_type == CODEC_PREENC) {
+        /* FeiPreencFixme */
     } else {
         if (obj_context->codec_state.decode.pic_param == NULL) {
             return VA_STATUS_ERROR_INVALID_PARAMETER;
