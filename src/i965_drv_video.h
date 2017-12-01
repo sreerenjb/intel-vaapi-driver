@@ -109,8 +109,7 @@
 #define HAS_FEI_H264_ENCODING(ctx)  ((ctx)->codec_info->has_fei_h264_encoding && \
                                      (ctx)->intel.has_bsd)
 
-#define HAS_H264_PREENC(ctx)  ((ctx)->codec_info->has_h264_preenc && \
-                               (ctx)->intel.has_bsd)
+#define HAS_H264_PREENC(ctx)  ((ctx)->codec_info->has_h264_preenc)
 
 #define HAS_VC1_DECODING(ctx)   ((ctx)->codec_info->has_vc1_decoding && \
                                  (ctx)->intel.has_bsd)
