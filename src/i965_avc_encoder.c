@@ -6308,7 +6308,7 @@ gen9_avc_preenc_send_surface_me(VADriverContextP ctx,
 
     }
     default:
-        assert(0);
+        break;
 
     }
 }
