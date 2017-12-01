@@ -6187,7 +6187,7 @@ gen9_avc_preenc_set_curbe_me(VADriverContextP ctx,
 
     memcpy(curbe_cmd, gen9_avc_me_curbe_init_data, sizeof(gen9_avc_me_curbe_init_data));
 
-    curbe_cmd->dw3.sub_pel_mode = 3;
+    curbe_cmd->dw3.sub_pel_mode = stat_param_h264->sub_pel_mode;
     if (avc_state->field_scaling_output_interleaved) {
         /*frame set to zero,field specified*/
         curbe_cmd->dw3.src_access = 0;
