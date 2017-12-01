@@ -8627,8 +8627,8 @@ gen9_avc_preenc_update_parameters(VADriverContextP ctx,
     /* frame width and height */
     generic_state->frame_width_in_pixel = encoder_context->frame_width_in_pixel;
     generic_state->frame_height_in_pixel = encoder_context->frame_height_in_pixel;
-    generic_state->frame_width_in_mbs = (generic_state->frame_width_in_pixel + 15) / 16;
-    generic_state->frame_height_in_mbs = (generic_state->frame_height_in_pixel + 15) / 16;
+    generic_state->frame_width_in_mbs = ALIGN(generic_state->frame_width_in_pixel, 16) / 16;
+    generic_state->frame_height_in_mbs = ALIGN(generic_state->frame_height_in_pixel, 16) / 16;
 
     /* 4x downscaled width and height */
     generic_state->frame_width_4x = ALIGN(generic_state->frame_width_in_pixel / 4, 16);
