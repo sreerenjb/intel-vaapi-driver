@@ -6025,10 +6025,12 @@ gen9_avc_preenc_kernel_scaling(VADriverContextP ctx,
     unsigned int downscaled_width_in_mb, downscaled_height_in_mb;
     int media_function = 0;
     int kernel_idx = 0;
+    int enable_statistics_output;
 
     stat_param_h264 = avc_state->stat_param;
     assert(stat_param_h264);
     stat_param = &stat_param_h264->stats_params;
+    enable_statistics_output = !stat_param_h264->disable_statistics_output;
 
     memset(&surface_param, 0, sizeof(struct scaling_param));
     media_function = INTEL_MEDIA_STATE_4X_SCALING;
@@ -6043,10 +6045,9 @@ gen9_avc_preenc_kernel_scaling(VADriverContextP ctx,
     surface_param.use_4x_scaling  = 1 ;
     surface_param.use_16x_scaling = 0 ;
     surface_param.use_32x_scaling = 0 ;
-    surface_param.enable_mb_flatness_check = !stat_param_h264->disable_statistics_output;
-    surface_param.enable_mb_variance_output = !stat_param_h264->disable_statistics_output;
-    surface_param.enable_mb_pixel_average_output =
-        !stat_param_h264->disable_statistics_output;
+    surface_param.enable_mb_flatness_check = enable_statistics_output;
+    surface_param.enable_mb_variance_output = enable_statistics_output;
+    surface_param.enable_mb_pixel_average_output = enable_statistics_output;
     surface_param.blk8x8_stat_enabled = stat_param_h264->enable_8x8_statistics;
 
     switch (scale_surface_type) {
@@ -6055,7 +6056,7 @@ gen9_avc_preenc_kernel_scaling(VADriverContextP ctx,
         surface_param.input_surface = encode_state->input_yuv_object ;
         surface_param.output_surface = avc_ctx->preenc_scaled_4x_surface_obj ;
 
-        if (!stat_param_h264->disable_statistics_output) {
+        if (enable_statistics_output) {
             surface_param.pres_mbv_proc_stat_buffer =
                 &avc_ctx->preproc_stat_data_out_buffer;
             surface_param.mbv_proc_stat_enabled = 1;
