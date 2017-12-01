@@ -959,7 +959,7 @@ intel_pre_encoder_check_avc_parameter(VADriverContextP ctx,
         (VAStatsStatisticsParameterH264 *) encode_state->stat_param_ext->buffer;
     stat_param = (VAStatsStatisticsParameter *)(&stat_param_h264->stats_params);
 
-    if (stat_param->input.flags == VA_PICTURE_FEI_INVALID)
+    if (stat_param->input.flags == VA_PICTURE_STATS_INVALID)
         goto error;
 
     obj_surface = SURFACE(encoder_context->input_yuv_surface);
